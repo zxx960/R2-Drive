@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>R2 Drive</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">R2</div>
+          <div>
+            <h1>R2 Drive</h1>
+            <p>Cloudflare R2 网盘</p>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>用户 ID</span>
+          <input id="userIdInput" autocomplete="off" />
+        </label>
+
+        <div class="actions">
+          <button id="refreshButton" class="primary" type="button">刷新</button>
+          <button id="rootButton" type="button">根目录</button>
+        </div>
+
+        <div class="upload-zone">
+          <input id="fileInput" type="file" multiple />
+          <p>选择文件后会直传到 R2，再写入数据库状态。</p>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="toolbar">
+          <div>
+            <div id="breadcrumbs" class="breadcrumbs">根目录</div>
+            <p id="summary" class="summary">准备就绪</p>
+          </div>
+
+          <form id="folderForm" class="folder-form">
+            <input id="folderNameInput" placeholder="新建文件夹" maxlength="255" />
+            <button type="submit">新建</button>
+          </form>
+        </header>
+
+        <div id="notice" class="notice" hidden></div>
+        <div id="items" class="items"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>
