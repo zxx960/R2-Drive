@@ -245,6 +245,14 @@ input {
   font-size: 18px;
 }
 
+.item-thumb {
+  width: 36px;
+  height: 36px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: #edf2f9;
+}
+
 .item-name {
   overflow: hidden;
   text-overflow: ellipsis;

@@ -53,6 +53,15 @@ export async function createDownloadUrl(key: string, filename: string) {
   });
 }
 
+export async function getObject(key: string) {
+  return s3.send(
+    new GetObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: key
+    })
+  );
+}
+
 export async function headObject(key: string) {
   return s3.send(
     new HeadObjectCommand({

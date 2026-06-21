@@ -142,16 +142,19 @@ function renderItems(payload) {
   }
 
   for (const file of files) {
-    els.items.append(createItem({
+    const item = createItem({
       type: 'file',
       name: file.name,
+      file,
       meta: `${formatBytes(file.size)} · ${file.mimeType || 'unknown'}`,
       actions: [
         ['下载', () => downloadFile(file.id)],
         ['分享', () => shareFile(file.id)],
         ['删除', () => deleteFile(file.id)]
       ]
-    }));
+    });
+    els.items.append(item);
+    loadThumbnail(item, file);
   }
 }
 
@@ -187,6 +190,34 @@ function createItem({ type, name, meta, onOpen, actions = [] }) {
 
   row.append(icon, title, detail, actionBox);
   return row;
+}
+
+async function loadThumbnail(row, file) {
+  if (!file.mimeType?.startsWith('image/')) return;
+
+  const icon = row.querySelector('.item-icon');
+  if (!icon) return;
+
+  try {
+    const response = await fetch(`/files/${file.id}/preview`, {
+      headers: {
+        authorization: `Bearer ${state.token}`
+      }
+    });
+
+    if (!response.ok) return;
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const image = document.createElement('img');
+    image.className = 'item-thumb';
+    image.alt = file.name;
+    image.src = url;
+    image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+    icon.replaceWith(image);
+  } catch {
+    // Keep the generic file icon if preview loading fails.
+  }
 }
 
 async function loadItems() {

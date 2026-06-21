@@ -10,7 +10,7 @@ import { createSessionToken, requireUser, type AppVariables } from './auth.js';
 import { env } from './config.js';
 import { collections, publicFile, publicFolder } from './db.js';
 import { assertFound, HttpError } from './errors.js';
-import { createDownloadUrl, createUploadUrl, deleteObject, headObject, uploadObject } from './r2.js';
+import { createDownloadUrl, createUploadUrl, deleteObject, getObject, headObject, uploadObject } from './r2.js';
 
 const app = new Hono<{ Variables: AppVariables }>();
 
@@ -436,6 +436,39 @@ app.get('/files/:fileId/download', requireUser, async (c) => {
   return c.json({
     url: await createDownloadUrl(file.r2Key, file.name),
     expiresIn: env.PRESIGNED_DOWNLOAD_TTL_SECONDS
+  });
+});
+
+app.get('/files/:fileId/preview', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const { files } = await collections();
+
+  const activeFile = await files.findOne({
+    id: fileId,
+    ownerId: userId,
+    status: 'active',
+    deletedAt: null
+  });
+  const file = assertFound(activeFile, 'File not found');
+
+  if (!file.mimeType.startsWith('image/')) {
+    throw new HttpError(415, 'Preview is only available for images');
+  }
+
+  const object = await getObject(file.r2Key);
+
+  if (!object.Body) {
+    throw new HttpError(404, 'Preview not found');
+  }
+
+  const bytes = await object.Body.transformToByteArray();
+
+  return new Response(Buffer.from(bytes), {
+    headers: {
+      'content-type': file.mimeType,
+      'cache-control': 'private, max-age=300'
+    }
   });
 });
 
