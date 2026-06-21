@@ -137,7 +137,10 @@ function renderItems(payload) {
         state.currentFolderId = folder.id;
         state.path.push({ id: folder.id, name: folder.name });
         loadItems();
-      }
+      },
+      actions: [
+        ['删除', () => deleteFolder(folder.id, folder.name)]
+      ]
     }));
   }
 
@@ -282,6 +285,19 @@ async function deleteFile(fileId) {
     await loadItems();
   } catch (error) {
     showNotice(error.message, true);
+  }
+}
+
+async function deleteFolder(folderId, folderName) {
+  if (!window.confirm(`删除文件夹「${folderName}」？文件夹必须为空。`)) return;
+
+  try {
+    await api(`/folders/${folderId}`, { method: 'DELETE' });
+    showNotice('文件夹已删除');
+    await loadItems();
+  } catch (error) {
+    const message = error.message === 'Folder is not empty' ? '文件夹不是空的，请先删除里面的内容' : error.message;
+    showNotice(message, true);
   }
 }
 

@@ -104,6 +104,52 @@ app.post('/folders', requireUser, async (c) => {
   return c.json({ folder: publicFolder(folder) }, 201);
 });
 
+app.delete('/folders/:folderId', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const folderId = uuidParam.parse(c.req.param('folderId'));
+  const { folders, files } = await collections();
+
+  const folder = await folders.findOne({
+    id: folderId,
+    ownerId: userId,
+    deletedAt: null
+  });
+  assertFound(folder, 'Folder not found');
+
+  const childFolder = await folders.findOne({
+    ownerId: userId,
+    parentId: folderId,
+    deletedAt: null
+  });
+
+  if (childFolder) {
+    throw new HttpError(409, 'Folder is not empty');
+  }
+
+  const childFile = await files.findOne({
+    ownerId: userId,
+    folderId,
+    deletedAt: null,
+    status: { $in: ['pending', 'active'] }
+  });
+
+  if (childFile) {
+    throw new HttpError(409, 'Folder is not empty');
+  }
+
+  await folders.updateOne(
+    { id: folderId, ownerId: userId },
+    {
+      $set: {
+        deletedAt: new Date(),
+        updatedAt: new Date()
+      }
+    }
+  );
+
+  return c.json({ ok: true });
+});
+
 app.get('/items', requireUser, async (c) => {
   const userId = c.get('userId');
   const folderId = c.req.query('folderId') ?? null;
