@@ -1,13 +1,19 @@
+const tokenKey = 'r2-drive-token';
+
 const state = {
-  userId: localStorage.getItem('r2-drive-user-id') || 'demo-user',
+  token: localStorage.getItem(tokenKey) || '',
   currentFolderId: null,
   path: [{ id: null, name: '根目录' }]
 };
 
+if (!state.token) {
+  window.location.replace('/login');
+}
+
 const els = {
-  userIdInput: document.querySelector('#userIdInput'),
   refreshButton: document.querySelector('#refreshButton'),
   rootButton: document.querySelector('#rootButton'),
+  logoutButton: document.querySelector('#logoutButton'),
   fileInput: document.querySelector('#fileInput'),
   folderForm: document.querySelector('#folderForm'),
   folderNameInput: document.querySelector('#folderNameInput'),
@@ -17,12 +23,10 @@ const els = {
   items: document.querySelector('#items')
 };
 
-els.userIdInput.value = state.userId;
-
 function headers(extra = {}) {
   const result = {
     'content-type': 'application/json',
-    'x-user-id': state.userId,
+    authorization: `Bearer ${state.token}`,
     ...extra
   };
 
@@ -33,6 +37,12 @@ function headers(extra = {}) {
   }
 
   return result;
+}
+
+function logout() {
+  state.token = '';
+  localStorage.removeItem(tokenKey);
+  window.location.href = '/login';
 }
 
 async function api(path, options = {}) {
@@ -47,6 +57,9 @@ async function api(path, options = {}) {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    if (response.status === 401) {
+      logout();
+    }
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
 
@@ -217,11 +230,10 @@ async function uploadFiles(files) {
       const response = await fetch('/uploads/server', {
         method: 'POST',
         headers: {
-          'x-user-id': state.userId
+          authorization: `Bearer ${state.token}`
         },
         body: formData
       });
-
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
@@ -273,20 +285,13 @@ async function deleteFile(fileId) {
   }
 }
 
-els.userIdInput.addEventListener('change', () => {
-  state.userId = els.userIdInput.value.trim() || 'demo-user';
-  localStorage.setItem('r2-drive-user-id', state.userId);
-  state.currentFolderId = null;
-  state.path = [{ id: null, name: '根目录' }];
-  loadItems();
-});
-
 els.refreshButton.addEventListener('click', loadItems);
 els.rootButton.addEventListener('click', () => {
   state.currentFolderId = null;
   state.path = [{ id: null, name: '根目录' }];
   loadItems();
 });
+els.logoutButton.addEventListener('click', logout);
 els.folderForm.addEventListener('submit', createFolder);
 els.fileInput.addEventListener('change', () => uploadFiles(Array.from(els.fileInput.files || [])));
 

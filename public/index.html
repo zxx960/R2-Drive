@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>R2 Drive</title>
-    <link rel="stylesheet" href="/static/app.css" />
+    <link rel="stylesheet" href="/static/app.css?v=20260621-pages" />
   </head>
   <body>
     <main class="shell">
@@ -17,19 +17,15 @@
           </div>
         </div>
 
-        <label class="field">
-          <span>用户 ID</span>
-          <input id="userIdInput" autocomplete="off" />
-        </label>
-
         <div class="actions">
           <button id="refreshButton" class="primary" type="button">刷新</button>
           <button id="rootButton" type="button">根目录</button>
+          <button id="logoutButton" type="button">退出</button>
         </div>
 
         <div class="upload-zone">
           <input id="fileInput" type="file" multiple />
-          <p>选择文件后会直传到 R2，再写入数据库状态。</p>
+          <p>选择文件后会上传到服务端，再保存到 R2。</p>
         </div>
       </aside>
 
@@ -51,6 +47,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js" type="module"></script>
+    <script src="/static/app.js?v=20260621-pages" type="module"></script>
   </body>
 </html>

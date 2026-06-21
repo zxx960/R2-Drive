@@ -8,6 +8,9 @@ const envSchema = z.object({
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),
   R2_BUCKET: z.string().min(1),
+  ADMIN_USERNAME: z.string().min(1).default('admin'),
+  ADMIN_PASSWORD: z.string().min(1).default('admin123'),
+  SESSION_SECRET: z.string().min(16).default('change-this-session-secret'),
   PRESIGNED_UPLOAD_TTL_SECONDS: z.coerce.number().int().positive().default(900),
   PRESIGNED_DOWNLOAD_TTL_SECONDS: z.coerce.number().int().positive().default(300)
 });

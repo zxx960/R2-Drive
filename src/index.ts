@@ -6,7 +6,7 @@ import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { requireUser, type AppVariables } from './auth.js';
+import { createSessionToken, requireUser, type AppVariables } from './auth.js';
 import { env } from './config.js';
 import { collections, publicFile, publicFolder } from './db.js';
 import { assertFound, HttpError } from './errors.js';
@@ -18,6 +18,7 @@ app.use('*', logger());
 app.use('*', cors());
 app.get('/static/app.css', serveStatic({ path: './public/app.css' }));
 app.get('/static/app.js', serveStatic({ path: './public/app.js' }));
+app.get('/static/login.js', serveStatic({ path: './public/login.js' }));
 
 app.onError((err, c) => {
   if (err instanceof HttpError) {
@@ -38,6 +39,35 @@ app.onError((err, c) => {
 
 app.get('/health', (c) => c.json({ ok: true }));
 app.get('/', serveStatic({ path: './public/index.html' }));
+app.get('/login', serveStatic({ path: './public/login.html' }));
+
+const loginSchema = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1)
+});
+
+app.post('/auth/login', async (c) => {
+  const body = loginSchema.parse(await c.req.json());
+
+  if (body.username !== env.ADMIN_USERNAME || body.password !== env.ADMIN_PASSWORD) {
+    throw new HttpError(401, 'Invalid username or password');
+  }
+
+  return c.json({
+    token: createSessionToken(body.username),
+    user: {
+      username: body.username
+    }
+  });
+});
+
+app.get('/auth/me', requireUser, (c) => {
+  return c.json({
+    user: {
+      username: c.get('userId')
+    }
+  });
+});
 
 const createFolderSchema = z.object({
   name: z.string().trim().min(1).max(255),
