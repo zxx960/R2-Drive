@@ -10,8 +10,7 @@ import { createSessionToken, requireUser, type AppVariables } from './auth.js';
 import { env } from './config.js';
 import { collections, publicFile, publicFolder } from './db.js';
 import { assertFound, HttpError } from './errors.js';
-import { createDownloadUrl, createUploadUrl, deleteObject, getObject, getObjectRange, headObject, uploadObject } from './r2.js';
-import { createVideoThumbnailBytes } from './thumbnails.js';
+import { createDownloadUrl, createUploadUrl, deleteObject, getObject, getObjectRange, headObject } from './r2.js';
 
 const app = new Hono<{ Variables: AppVariables }>();
 const streamTokenTtlSeconds = 60 * 10;
@@ -348,69 +347,6 @@ app.post('/uploads/init', requireUser, async (c) => {
     },
     201
   );
-});
-
-app.post('/uploads/server', requireUser, async (c) => {
-  const userId = c.get('userId');
-  const body = await c.req.parseBody();
-  const uploaded = body.file;
-  const folderIdValue = body.folderId;
-  const folderId =
-    typeof folderIdValue === 'string' && folderIdValue.length > 0 ? z.string().uuid().parse(folderIdValue) : null;
-
-  if (!(uploaded instanceof File)) {
-    throw new HttpError(400, 'Missing file');
-  }
-
-  const { folders, files } = await collections();
-  const id = randomUUID();
-  const key = `users/${userId}/objects/${id}`;
-  const now = new Date();
-
-  if (folderId) {
-    const folder = await folders.findOne({
-      id: folderId,
-      ownerId: userId,
-      deletedAt: null
-    });
-    assertFound(folder, 'Folder not found');
-  }
-
-  const bytes = new Uint8Array(await uploaded.arrayBuffer());
-  const mimeType = uploaded.type || 'application/octet-stream';
-  const object = await uploadObject(key, mimeType, bytes);
-  let thumbnailKey: string | null = null;
-
-  if (mimeType.startsWith('video/')) {
-    try {
-      const thumbnailBytes = await createVideoThumbnailBytes(bytes, mimeType);
-      thumbnailKey = `users/${userId}/thumbnails/${id}.jpg`;
-      await uploadObject(thumbnailKey, 'image/jpeg', thumbnailBytes);
-    } catch (error) {
-      console.warn('Failed to create video thumbnail', error);
-    }
-  }
-
-  const file = {
-    id,
-    ownerId: userId,
-    folderId,
-    name: uploaded.name,
-    r2Key: key,
-    size: uploaded.size,
-    mimeType,
-    etag: object.ETag ?? null,
-    thumbnailKey,
-    status: 'active' as const,
-    createdAt: now,
-    uploadedAt: now,
-    updatedAt: now,
-    deletedAt: null
-  };
-
-  await files.insertOne(file);
-
-  return c.json({ file: publicFile(file) }, 201);
 });
 
 const completeUploadSchema = z.object({
