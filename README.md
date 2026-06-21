@@ -1,46 +1,46 @@
 # R2 Drive
 
-A personal cloud drive built with Hono, MongoDB, and Cloudflare R2.
+一个基于 Hono、MongoDB 和 Cloudflare R2 的个人网盘应用。
 
-## Features
+## 功能
 
-- Single-user login with credentials from environment variables.
-- Folder creation, navigation, deletion, restore, and permanent deletion.
-- File upload, download, rename/move, delete, restore, and permanent deletion.
-- Trash page separated from the main drive page.
-- Browser direct upload to R2 with presigned PUT URLs.
-- Image thumbnails and click-to-preview.
-- Video thumbnails generated in the browser during upload when possible.
-- Video playback through the app with signed short-lived stream URLs and HTTP Range support.
-- Share links with optional expiration.
+- 使用环境变量配置单用户登录账号。
+- 支持文件夹创建、进入、删除、恢复和彻底删除。
+- 支持文件上传、下载、重命名/移动、删除、恢复和彻底删除。
+- 首页和回收站页面分离。
+- 浏览器通过预签名 `PUT` URL 直接上传文件到 R2。
+- 图片支持缩略图和点击预览。
+- 视频上传时会尽量在浏览器本地生成缩略图。
+- 视频支持在线播放，后端提供短期签名播放地址，并支持 HTTP Range 分段读取。
+- 支持创建带过期时间的分享链接。
 
-## Pages
+## 页面入口
 
-- `http://localhost:3000/login` - login page
-- `http://localhost:3000/` - main drive
-- `http://localhost:3000/trash` - trash
+- `http://localhost:3000/login` - 登录页
+- `http://localhost:3000/` - 网盘首页
+- `http://localhost:3000/trash` - 回收站
 
-## Setup
+## 本地启动
 
-1. Install dependencies:
+1. 安装依赖：
 
    ```bash
    npm install
    ```
 
-2. Copy environment variables:
+2. 复制环境变量文件：
 
    ```bash
    cp .env.example .env
    ```
 
-3. Start MongoDB locally or use an existing MongoDB instance, then fill `DATABASE_URL`.
+3. 启动本地 MongoDB，或者使用已有 MongoDB 实例，然后填写 `DATABASE_URL`。
 
    ```text
    DATABASE_URL=mongodb://localhost:27017/r2_drive
    ```
 
-4. Create a Cloudflare R2 bucket and R2 API token, then fill:
+4. 创建 Cloudflare R2 存储桶和 R2 API Token，然后填写：
 
    ```text
    R2_ACCOUNT_ID
@@ -49,7 +49,7 @@ A personal cloud drive built with Hono, MongoDB, and Cloudflare R2.
    R2_BUCKET
    ```
 
-5. Set the login credentials:
+5. 设置登录账号和会话密钥：
 
    ```text
    ADMIN_USERNAME=user
@@ -57,13 +57,13 @@ A personal cloud drive built with Hono, MongoDB, and Cloudflare R2.
    SESSION_SECRET=replace-with-a-long-random-string
    ```
 
-6. Create database indexes:
+6. 创建数据库索引：
 
    ```bash
    npm run db:migrate
    ```
 
-7. Start the app:
+7. 启动应用：
 
    ```bash
    npm run dev
@@ -71,7 +71,7 @@ A personal cloud drive built with Hono, MongoDB, and Cloudflare R2.
 
 ## R2 CORS
 
-Direct browser uploads require CORS on the R2 bucket. For local development:
+浏览器直传 R2 需要在 R2 存储桶上配置 CORS。本地开发可以使用下面的配置：
 
 ```json
 [
@@ -95,24 +95,24 @@ Direct browser uploads require CORS on the R2 bucket. For local development:
 ]
 ```
 
-Add your production domain to `AllowedOrigins` after deployment.
+部署到服务器后，把你的正式域名也加入 `AllowedOrigins`。
 
-## Upload Flow
+## 上传流程
 
-The app does not send file bytes through the backend for normal uploads.
+正常上传时，文件内容不会经过后端 Node 进程。
 
-1. The frontend calls `POST /uploads/init`.
-2. The backend creates a pending database row and returns a presigned R2 `PUT` URL.
-3. The frontend uploads the file directly to R2.
-4. For videos, the frontend tries to capture a local thumbnail and uploads it to R2 with a second presigned URL.
-5. The frontend calls `POST /uploads/{fileId}/complete`.
-6. The backend verifies the object with `HeadObject` and marks the file active.
+1. 前端调用 `POST /uploads/init`。
+2. 后端创建一条 `pending` 状态的数据库记录，并返回 R2 预签名 `PUT` URL。
+3. 前端直接把文件上传到 R2。
+4. 如果是视频，前端会尝试在本地截取缩略图，并使用第二个预签名 URL 上传到 R2。
+5. 前端调用 `POST /uploads/{fileId}/complete`。
+6. 后端通过 `HeadObject` 校验 R2 对象存在，然后把文件标记为 `active`。
 
-This is much safer for large files than buffering uploads in the Node process.
+这种方式比把文件先传到后端再转发到 R2 更适合大文件，不会让 Node 进程承受文件内存压力。
 
-## API Overview
+## API 概览
 
-Log in:
+登录：
 
 ```bash
 curl -X POST http://localhost:3000/auth/login \
@@ -120,14 +120,14 @@ curl -X POST http://localhost:3000/auth/login \
   -d "{\"username\":\"user\",\"password\":\"your-password\"}"
 ```
 
-List items:
+列出当前目录：
 
 ```bash
 curl http://localhost:3000/items \
   -H "authorization: Bearer <token>"
 ```
 
-Create a folder:
+创建文件夹：
 
 ```bash
 curl -X POST http://localhost:3000/folders \
@@ -136,7 +136,7 @@ curl -X POST http://localhost:3000/folders \
   -d "{\"name\":\"Photos\"}"
 ```
 
-Initialize an upload:
+初始化上传：
 
 ```bash
 curl -X POST http://localhost:3000/uploads/init \
@@ -145,7 +145,7 @@ curl -X POST http://localhost:3000/uploads/init \
   -d "{\"name\":\"hello.txt\",\"size\":12,\"mimeType\":\"text/plain\"}"
 ```
 
-Upload the file bytes using the returned signed `PUT` URL, then complete the upload:
+使用返回的签名 `PUT` URL 上传文件内容，然后完成上传：
 
 ```bash
 curl -X POST http://localhost:3000/uploads/{fileId}/complete \
@@ -154,21 +154,21 @@ curl -X POST http://localhost:3000/uploads/{fileId}/complete \
   -d "{}"
 ```
 
-Get a signed download URL:
+获取签名下载地址：
 
 ```bash
 curl http://localhost:3000/files/{fileId}/download \
   -H "authorization: Bearer <token>"
 ```
 
-Get a signed video stream URL:
+获取签名视频播放地址：
 
 ```bash
 curl http://localhost:3000/files/{fileId}/stream-token \
   -H "authorization: Bearer <token>"
 ```
 
-Create a share link token:
+创建分享链接 token：
 
 ```bash
 curl -X POST http://localhost:3000/files/{fileId}/share \
@@ -177,14 +177,14 @@ curl -X POST http://localhost:3000/files/{fileId}/share \
   -d "{\"expiresInSeconds\":86400}"
 ```
 
-Resolve a share token:
+解析分享 token：
 
 ```bash
 curl http://localhost:3000/shares/{token}
 ```
 
-## Large Files
+## 大文件说明
 
-Direct upload avoids backend memory pressure, but the current upload is still a single `PUT`. Very large files can fail if the network disconnects because the whole object must be retried.
+直传 R2 可以避免后端内存压力，但当前上传仍然是单次 `PUT`。如果文件特别大，上传过程中网络断开时，需要重新上传整个对象。
 
-For multi-GB files, the next improvement should be multipart upload: split the file into parts, upload parts independently, retry failed parts, then complete the multipart upload.
+如果要更稳定地支持几个 GB 甚至更大的文件，下一步建议接入 multipart upload：把文件拆成多个分片独立上传，失败时只重试失败分片，最后再合并完成上传。
