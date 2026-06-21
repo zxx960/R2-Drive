@@ -19,6 +19,7 @@ app.use('*', cors());
 app.get('/static/app.css', serveStatic({ path: './public/app.css' }));
 app.get('/static/app.js', serveStatic({ path: './public/app.js' }));
 app.get('/static/login.js', serveStatic({ path: './public/login.js' }));
+app.get('/static/trash.js', serveStatic({ path: './public/trash.js' }));
 
 app.onError((err, c) => {
   if (err instanceof HttpError) {
@@ -40,6 +41,7 @@ app.onError((err, c) => {
 app.get('/health', (c) => c.json({ ok: true }));
 app.get('/', serveStatic({ path: './public/index.html' }));
 app.get('/login', serveStatic({ path: './public/login.html' }));
+app.get('/trash', serveStatic({ path: './public/trash.html' }));
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -252,7 +254,7 @@ app.get('/items', requireUser, async (c) => {
   });
 });
 
-app.get('/trash', requireUser, async (c) => {
+app.get('/api/trash', requireUser, async (c) => {
   const userId = c.get('userId');
   const { folders, files } = await collections();
 

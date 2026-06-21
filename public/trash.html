@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>R2 Drive</title>
-    <link rel="stylesheet" href="/static/app.css?v=20260621-pages" />
+    <title>回收站 - R2 Drive</title>
+    <link rel="stylesheet" href="/static/app.css?v=20260621-split-trash" />
   </head>
   <body>
     <main class="shell">
@@ -13,32 +13,22 @@
           <div class="brand-mark">R2</div>
           <div>
             <h1>R2 Drive</h1>
-            <p>Cloudflare R2 网盘</p>
+            <p>回收站</p>
           </div>
         </div>
 
         <div class="actions">
-          <button id="trashButton" type="button">回收站</button>
+          <button id="homeButton" type="button">首页</button>
           <button id="logoutButton" type="button">退出</button>
-        </div>
-
-        <div class="upload-zone">
-          <input id="fileInput" type="file" multiple />
-          <p>选择文件后会上传到服务端，再保存到 R2。</p>
         </div>
       </aside>
 
       <section class="workspace">
         <header class="toolbar">
           <div>
-            <div id="breadcrumbs" class="breadcrumbs">根目录</div>
+            <div class="breadcrumbs">回收站</div>
             <p id="summary" class="summary">准备就绪</p>
           </div>
-
-          <form id="folderForm" class="folder-form">
-            <input id="folderNameInput" placeholder="新建文件夹" maxlength="255" />
-            <button type="submit">新建</button>
-          </form>
         </header>
 
         <div id="notice" class="notice" hidden></div>
@@ -46,6 +36,6 @@
       </section>
     </main>
 
-    <script src="/static/app.js?v=20260621-split-trash" type="module"></script>
+    <script src="/static/trash.js?v=20260621-split-trash" type="module"></script>
   </body>
 </html>
