@@ -291,6 +291,7 @@ app.post('/uploads/init', requireUser, async (c) => {
   const { folders, files } = await collections();
   const id = randomUUID();
   const key = `users/${userId}/objects/${id}`;
+  const thumbnailKey = body.mimeType.startsWith('video/') ? `users/${userId}/thumbnails/${id}.jpg` : null;
   const now = new Date();
 
   if (body.folderId) {
@@ -303,6 +304,7 @@ app.post('/uploads/init', requireUser, async (c) => {
   }
 
   const uploadUrl = await createUploadUrl(key, body.mimeType);
+  const thumbnailUploadUrl = thumbnailKey ? await createUploadUrl(thumbnailKey, 'image/jpeg') : null;
   const file = {
     id,
     ownerId: userId,
@@ -312,6 +314,7 @@ app.post('/uploads/init', requireUser, async (c) => {
     size: body.size,
     mimeType: body.mimeType,
     etag: null,
+    thumbnailKey,
     status: 'pending' as const,
     createdAt: now,
     uploadedAt: null,
@@ -331,7 +334,17 @@ app.post('/uploads/init', requireUser, async (c) => {
         headers: {
           'content-type': body.mimeType
         }
-      }
+      },
+      thumbnailUpload: thumbnailUploadUrl
+        ? {
+            method: 'PUT',
+            url: thumbnailUploadUrl,
+            expiresIn: env.PRESIGNED_UPLOAD_TTL_SECONDS,
+            headers: {
+              'content-type': 'image/jpeg'
+            }
+          }
+        : null
     },
     201
   );
@@ -400,9 +413,14 @@ app.post('/uploads/server', requireUser, async (c) => {
   return c.json({ file: publicFile(file) }, 201);
 });
 
+const completeUploadSchema = z.object({
+  thumbnailUploaded: z.boolean().optional().default(false)
+});
+
 app.post('/uploads/:fileId/complete', requireUser, async (c) => {
   const userId = c.get('userId');
   const fileId = uuidParam.parse(c.req.param('fileId'));
+  const body = completeUploadSchema.parse(await c.req.json().catch(() => ({})));
   const { files } = await collections();
 
   const pendingFile = await files.findOne({
@@ -423,6 +441,7 @@ app.post('/uploads/:fileId/complete', requireUser, async (c) => {
         status: 'active',
         size: object.ContentLength ?? file.size,
         etag: object.ETag ?? null,
+        thumbnailKey: body.thumbnailUploaded ? file.thumbnailKey ?? null : null,
         uploadedAt: now,
         updatedAt: now
       }

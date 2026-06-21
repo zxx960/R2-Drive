@@ -354,28 +354,108 @@ async function createFolder(event) {
   }
 }
 
+function waitForEvent(target, eventName) {
+  return new Promise((resolve, reject) => {
+    const onEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error('视频缩略图生成失败'));
+    };
+    const cleanup = () => {
+      target.removeEventListener(eventName, onEvent);
+      target.removeEventListener('error', onError);
+    };
+
+    target.addEventListener(eventName, onEvent, { once: true });
+    target.addEventListener('error', onError, { once: true });
+  });
+}
+
+async function createVideoThumbnailBlob(file) {
+  if (!file.type.startsWith('video/')) return null;
+
+  const url = URL.createObjectURL(file);
+  const video = document.createElement('video');
+  video.preload = 'metadata';
+  video.muted = true;
+  video.playsInline = true;
+  video.src = url;
+
+  try {
+    await waitForEvent(video, 'loadedmetadata');
+    const targetTime = Number.isFinite(video.duration) && video.duration > 2 ? 1 : 0;
+
+    if (targetTime > 0) {
+      video.currentTime = targetTime;
+      await waitForEvent(video, 'seeked');
+    } else {
+      await waitForEvent(video, 'loadeddata');
+    }
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 360;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext('2d').drawImage(video, 0, 0, width, height);
+
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+  } finally {
+    URL.revokeObjectURL(url);
+    video.removeAttribute('src');
+    video.load();
+  }
+}
+
+async function uploadToSignedUrl(upload, body) {
+  const response = await fetch(upload.url, {
+    method: upload.method,
+    headers: upload.headers || {},
+    body
+  });
+
+  if (!response.ok) {
+    throw new Error(`上传到 R2 失败：HTTP ${response.status}`);
+  }
+}
+
 async function uploadFiles(files) {
   for (const file of files) {
     try {
       showNotice(`正在上传 ${file.name}`);
-      const formData = new FormData();
-      formData.append('file', file);
-      if (state.currentFolderId) {
-        formData.append('folderId', state.currentFolderId);
-      }
-
-      const response = await fetch('/uploads/server', {
+      const mimeType = file.type || 'application/octet-stream';
+      const initPayload = await api('/uploads/init', {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${state.token}`
-        },
-        body: formData
+        body: JSON.stringify({
+          name: file.name,
+          folderId: state.currentFolderId,
+          size: file.size,
+          mimeType
+        })
       });
-      const payload = await response.json().catch(() => ({}));
 
-      if (!response.ok) {
-        throw new Error(payload.error || `上传失败：HTTP ${response.status}`);
+      await uploadToSignedUrl(initPayload.upload, file);
+
+      let thumbnailUploaded = false;
+      if (initPayload.thumbnailUpload) {
+        try {
+          const thumbnail = await createVideoThumbnailBlob(file);
+          if (thumbnail) {
+            await uploadToSignedUrl(initPayload.thumbnailUpload, thumbnail);
+            thumbnailUploaded = true;
+          }
+        } catch {
+          thumbnailUploaded = false;
+        }
       }
+
+      await api(`/uploads/${initPayload.file.id}/complete`, {
+        method: 'POST',
+        body: JSON.stringify({ thumbnailUploaded })
+      });
 
       showNotice(`${file.name} 已上传`);
     } catch (error) {
