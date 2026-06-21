@@ -154,6 +154,10 @@ input {
   grid-column: 1 / -1;
 }
 
+#trashButton {
+  grid-column: 1 / -1;
+}
+
 .upload-zone {
   display: grid;
   gap: 10px;

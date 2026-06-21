@@ -150,6 +150,77 @@ app.delete('/folders/:folderId', requireUser, async (c) => {
   return c.json({ ok: true });
 });
 
+app.post('/folders/:folderId/restore', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const folderId = uuidParam.parse(c.req.param('folderId'));
+  const { folders } = await collections();
+
+  const deletedFolder = await folders.findOne({
+    id: folderId,
+    ownerId: userId,
+    deletedAt: { $ne: null }
+  });
+  const folder = assertFound(deletedFolder, 'Folder not found');
+
+  const conflict = await folders.findOne({
+    ownerId: userId,
+    parentId: folder.parentId,
+    name: folder.name,
+    deletedAt: null
+  });
+
+  if (conflict) {
+    throw new HttpError(409, 'A folder with this name already exists');
+  }
+
+  await folders.updateOne(
+    { id: folderId, ownerId: userId },
+    {
+      $set: {
+        deletedAt: null,
+        updatedAt: new Date()
+      }
+    }
+  );
+
+  return c.json({ ok: true });
+});
+
+app.delete('/folders/:folderId/permanent', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const folderId = uuidParam.parse(c.req.param('folderId'));
+  const { folders, files } = await collections();
+
+  const folder = await folders.findOne({
+    id: folderId,
+    ownerId: userId,
+    deletedAt: { $ne: null }
+  });
+  assertFound(folder, 'Folder not found');
+
+  const childFolder = await folders.findOne({
+    ownerId: userId,
+    parentId: folderId
+  });
+
+  if (childFolder) {
+    throw new HttpError(409, 'Folder is not empty');
+  }
+
+  const childFile = await files.findOne({
+    ownerId: userId,
+    folderId
+  });
+
+  if (childFile) {
+    throw new HttpError(409, 'Folder is not empty');
+  }
+
+  await folders.deleteOne({ id: folderId, ownerId: userId });
+
+  return c.json({ ok: true });
+});
+
 app.get('/items', requireUser, async (c) => {
   const userId = c.get('userId');
   const folderId = c.req.query('folderId') ?? null;
@@ -176,6 +247,26 @@ app.get('/items', requireUser, async (c) => {
 
   return c.json({
     folderId,
+    folders: folderRows.map(publicFolder),
+    files: fileRows.map(publicFile)
+  });
+});
+
+app.get('/trash', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const { folders, files } = await collections();
+
+  const folderRows = await folders
+    .find({ ownerId: userId, deletedAt: { $ne: null } })
+    .sort({ deletedAt: -1 })
+    .toArray();
+
+  const fileRows = await files
+    .find({ ownerId: userId, deletedAt: { $ne: null }, status: 'trashed' })
+    .sort({ deletedAt: -1 })
+    .toArray();
+
+  return c.json({
     folders: folderRows.map(publicFolder),
     files: fileRows.map(publicFile)
   });
@@ -382,10 +473,9 @@ app.patch('/files/:fileId', requireUser, async (c) => {
 app.delete('/files/:fileId', requireUser, async (c) => {
   const userId = c.get('userId');
   const fileId = uuidParam.parse(c.req.param('fileId'));
-  const hard = c.req.query('hard') === 'true';
   const { files } = await collections();
 
-  const result = await files.findOneAndUpdate(
+  const result = await files.updateOne(
     { id: fileId, ownerId: userId, deletedAt: null },
     {
       $set: {
@@ -393,16 +483,61 @@ app.delete('/files/:fileId', requireUser, async (c) => {
         status: 'trashed',
         updatedAt: new Date()
       }
-    },
-    { returnDocument: 'after' }
+    }
   );
-  const file = assertFound(result, 'File not found');
 
-  if (hard) {
-    await deleteObject(file.r2Key);
+  if (result.matchedCount === 0) {
+    throw new HttpError(404, 'File not found');
   }
 
-  return c.json({ ok: true, hardDeleted: hard });
+  return c.json({ ok: true, trashed: true });
+});
+
+app.post('/files/:fileId/restore', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const { files } = await collections();
+
+  const file = await files.findOne({
+    id: fileId,
+    ownerId: userId,
+    status: 'trashed',
+    deletedAt: { $ne: null }
+  });
+  assertFound(file, 'File not found');
+
+  await files.updateOne(
+    { id: fileId, ownerId: userId },
+    {
+      $set: {
+        status: 'active',
+        deletedAt: null,
+        updatedAt: new Date()
+      }
+    }
+  );
+
+  return c.json({ ok: true });
+});
+
+app.delete('/files/:fileId/permanent', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const { files, shares } = await collections();
+
+  const file = await files.findOne({
+    id: fileId,
+    ownerId: userId,
+    status: 'trashed',
+    deletedAt: { $ne: null }
+  });
+  const trashedFile = assertFound(file, 'File not found');
+
+  await deleteObject(trashedFile.r2Key);
+  await shares.deleteMany({ fileId });
+  await files.deleteOne({ id: fileId, ownerId: userId });
+
+  return c.json({ ok: true, r2Deleted: true });
 });
 
 const createShareSchema = z.object({

@@ -68,7 +68,8 @@ export function publicFolder(folder: FolderDoc) {
     id: folder.id,
     parentId: folder.parentId,
     name: folder.name,
-    createdAt: folder.createdAt
+    createdAt: folder.createdAt,
+    deletedAt: folder.deletedAt
   };
 }
 
@@ -81,6 +82,7 @@ export function publicFile(file: FileDoc) {
     mimeType: file.mimeType,
     status: file.status,
     createdAt: file.createdAt,
-    uploadedAt: file.uploadedAt
+    uploadedAt: file.uploadedAt,
+    deletedAt: file.deletedAt
   };
 }

@@ -3,7 +3,8 @@ const tokenKey = 'r2-drive-token';
 const state = {
   token: localStorage.getItem(tokenKey) || '',
   currentFolderId: null,
-  path: [{ id: null, name: '根目录' }]
+  path: [{ id: null, name: '根目录' }],
+  view: 'files'
 };
 
 if (!state.token) {
@@ -13,6 +14,7 @@ if (!state.token) {
 const els = {
   refreshButton: document.querySelector('#refreshButton'),
   rootButton: document.querySelector('#rootButton'),
+  trashButton: document.querySelector('#trashButton'),
   logoutButton: document.querySelector('#logoutButton'),
   fileInput: document.querySelector('#fileInput'),
   folderForm: document.querySelector('#folderForm'),
@@ -92,6 +94,11 @@ function formatBytes(bytes) {
 function renderBreadcrumbs() {
   els.breadcrumbs.replaceChildren();
 
+  if (state.view === 'trash') {
+    els.breadcrumbs.textContent = '回收站';
+    return;
+  }
+
   state.path.forEach((part, index) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -118,42 +125,66 @@ function renderItems(payload) {
 
   const folders = payload.folders || [];
   const files = payload.files || [];
-  els.summary.textContent = `${folders.length} 个文件夹，${files.length} 个文件`;
+  els.summary.textContent =
+    state.view === 'trash'
+      ? `${folders.length} 个已删除文件夹，${files.length} 个已删除文件`
+      : `${folders.length} 个文件夹，${files.length} 个文件`;
+
+  els.folderForm.hidden = state.view === 'trash';
+  els.fileInput.disabled = state.view === 'trash';
 
   if (!folders.length && !files.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = '这个目录还是空的';
+    empty.textContent = state.view === 'trash' ? '回收站是空的' : '这个目录还是空的';
     els.items.append(empty);
     return;
   }
 
   for (const folder of folders) {
+    const folderActions =
+      state.view === 'trash'
+        ? [
+            ['恢复', () => restoreFolder(folder.id)],
+            ['永久删除', () => permanentDeleteFolder(folder.id, folder.name)]
+          ]
+        : [['删除', () => deleteFolder(folder.id, folder.name)]];
+
     els.items.append(createItem({
       type: 'folder',
       name: folder.name,
-      meta: '文件夹',
+      meta: state.view === 'trash' ? `已删除 · ${formatDate(folder.deletedAt)}` : '文件夹',
       onOpen: () => {
+        if (state.view === 'trash') return;
         state.currentFolderId = folder.id;
         state.path.push({ id: folder.id, name: folder.name });
         loadItems();
       },
-      actions: [
-        ['删除', () => deleteFolder(folder.id, folder.name)]
-      ]
+      actions: folderActions
     }));
   }
 
   for (const file of files) {
+    const fileActions =
+      state.view === 'trash'
+        ? [
+            ['恢复', () => restoreFile(file.id)],
+            ['永久删除', () => permanentDeleteFile(file.id, file.name)]
+          ]
+        : [
+            ['下载', () => downloadFile(file.id)],
+            ['分享', () => shareFile(file.id)],
+            ['删除', () => deleteFile(file.id)]
+          ];
+
     els.items.append(createItem({
       type: 'file',
       name: file.name,
-      meta: `${formatBytes(file.size)} · ${file.mimeType || 'unknown'}`,
-      actions: [
-        ['下载', () => downloadFile(file.id)],
-        ['分享', () => shareFile(file.id)],
-        ['删除', () => deleteFile(file.id)]
-      ]
+      meta:
+        state.view === 'trash'
+          ? `${formatBytes(file.size)} · 已删除 · ${formatDate(file.deletedAt)}`
+          : `${formatBytes(file.size)} · ${file.mimeType || 'unknown'}`,
+      actions: fileActions
     }));
   }
 }
@@ -192,10 +223,16 @@ function createItem({ type, name, meta, onOpen, actions = [] }) {
   return row;
 }
 
+function formatDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString();
+}
+
 async function loadItems() {
   try {
     const query = state.currentFolderId ? `?folderId=${encodeURIComponent(state.currentFolderId)}` : '';
-    const payload = await api(`/items${query}`, { method: 'GET', headers: { 'content-type': undefined } });
+    const path = state.view === 'trash' ? '/trash' : `/items${query}`;
+    const payload = await api(path, { method: 'GET', headers: { 'content-type': undefined } });
     renderItems(payload);
   } catch (error) {
     showNotice(error.message, true);
@@ -277,11 +314,33 @@ async function shareFile(fileId) {
 }
 
 async function deleteFile(fileId) {
-  if (!window.confirm('删除这个文件？')) return;
+  if (!window.confirm('将这个文件移入回收站？')) return;
 
   try {
     await api(`/files/${fileId}`, { method: 'DELETE' });
-    showNotice('文件已删除');
+    showNotice('文件已移入回收站');
+    await loadItems();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function restoreFile(fileId) {
+  try {
+    await api(`/files/${fileId}/restore`, { method: 'POST' });
+    showNotice('文件已恢复');
+    await loadItems();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+async function permanentDeleteFile(fileId, fileName) {
+  if (!window.confirm(`永久删除文件「${fileName}」？R2 中的对象也会一起删除。`)) return;
+
+  try {
+    await api(`/files/${fileId}/permanent`, { method: 'DELETE' });
+    showNotice('文件已永久删除');
     await loadItems();
   } catch (error) {
     showNotice(error.message, true);
@@ -289,11 +348,11 @@ async function deleteFile(fileId) {
 }
 
 async function deleteFolder(folderId, folderName) {
-  if (!window.confirm(`删除文件夹「${folderName}」？文件夹必须为空。`)) return;
+  if (!window.confirm(`将文件夹「${folderName}」移入回收站？文件夹必须为空。`)) return;
 
   try {
     await api(`/folders/${folderId}`, { method: 'DELETE' });
-    showNotice('文件夹已删除');
+    showNotice('文件夹已移入回收站');
     await loadItems();
   } catch (error) {
     const message = error.message === 'Folder is not empty' ? '文件夹不是空的，请先删除里面的内容' : error.message;
@@ -301,8 +360,40 @@ async function deleteFolder(folderId, folderName) {
   }
 }
 
+async function restoreFolder(folderId) {
+  try {
+    await api(`/folders/${folderId}/restore`, { method: 'POST' });
+    showNotice('文件夹已恢复');
+    await loadItems();
+  } catch (error) {
+    const message =
+      error.message === 'A folder with this name already exists' ? '同名文件夹已存在，无法恢复' : error.message;
+    showNotice(message, true);
+  }
+}
+
+async function permanentDeleteFolder(folderId, folderName) {
+  if (!window.confirm(`永久删除文件夹「${folderName}」？文件夹必须为空。`)) return;
+
+  try {
+    await api(`/folders/${folderId}/permanent`, { method: 'DELETE' });
+    showNotice('文件夹已永久删除');
+    await loadItems();
+  } catch (error) {
+    const message = error.message === 'Folder is not empty' ? '文件夹不是空的，请先永久删除里面的内容' : error.message;
+    showNotice(message, true);
+  }
+}
+
 els.refreshButton.addEventListener('click', loadItems);
 els.rootButton.addEventListener('click', () => {
+  state.view = 'files';
+  state.currentFolderId = null;
+  state.path = [{ id: null, name: '根目录' }];
+  loadItems();
+});
+els.trashButton.addEventListener('click', () => {
+  state.view = 'trash';
   state.currentFolderId = null;
   state.path = [{ id: null, name: '根目录' }];
   loadItems();
