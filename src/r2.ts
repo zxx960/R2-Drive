@@ -62,6 +62,16 @@ export async function getObject(key: string) {
   );
 }
 
+export async function getObjectRange(key: string, range?: string) {
+  return s3.send(
+    new GetObjectCommand({
+      Bucket: env.R2_BUCKET,
+      Key: key,
+      Range: range
+    })
+  );
+}
+
 export async function headObject(key: string) {
   return s3.send(
     new HeadObjectCommand({

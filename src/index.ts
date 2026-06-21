@@ -4,16 +4,17 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { HTTPException } from 'hono/http-exception';
-import { randomUUID } from 'node:crypto';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { createSessionToken, requireUser, type AppVariables } from './auth.js';
 import { env } from './config.js';
 import { collections, publicFile, publicFolder } from './db.js';
 import { assertFound, HttpError } from './errors.js';
-import { createDownloadUrl, createUploadUrl, deleteObject, getObject, headObject, uploadObject } from './r2.js';
+import { createDownloadUrl, createUploadUrl, deleteObject, getObject, getObjectRange, headObject, uploadObject } from './r2.js';
 import { createVideoThumbnailBytes } from './thumbnails.js';
 
 const app = new Hono<{ Variables: AppVariables }>();
+const streamTokenTtlSeconds = 60 * 10;
 
 app.use('*', logger());
 app.use('*', cors());
@@ -515,6 +516,105 @@ app.get('/files/:fileId/thumbnail', requireUser, async (c) => {
       'content-type': 'image/jpeg',
       'cache-control': 'private, max-age=86400'
     }
+  });
+});
+
+function signStreamToken(fileId: string, userId: string, expiresAt: number) {
+  return createHmac('sha256', env.SESSION_SECRET).update(`${fileId}.${userId}.${expiresAt}`).digest('base64url');
+}
+
+function createStreamToken(fileId: string, userId: string) {
+  const expiresAt = Math.floor(Date.now() / 1000) + streamTokenTtlSeconds;
+  return `${expiresAt}.${signStreamToken(fileId, userId, expiresAt)}`;
+}
+
+function verifyStreamToken(fileId: string, userId: string, token: string) {
+  const [expiresAtText, signature] = token.split('.');
+  const expiresAt = Number(expiresAtText);
+
+  if (!expiresAt || !signature || expiresAt < Math.floor(Date.now() / 1000)) {
+    throw new HttpError(401, 'Invalid stream token');
+  }
+
+  const expected = signStreamToken(fileId, userId, expiresAt);
+  const actualBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+
+  if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {
+    throw new HttpError(401, 'Invalid stream token');
+  }
+}
+
+app.get('/files/:fileId/stream-token', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const { files } = await collections();
+
+  const activeFile = await files.findOne({
+    id: fileId,
+    ownerId: userId,
+    status: 'active',
+    deletedAt: null
+  });
+  const file = assertFound(activeFile, 'File not found');
+
+  if (!file.mimeType.startsWith('video/')) {
+    throw new HttpError(415, 'Streaming is only available for videos');
+  }
+
+  return c.json({
+    url: `/files/${fileId}/stream?token=${encodeURIComponent(createStreamToken(fileId, userId))}`,
+    expiresIn: streamTokenTtlSeconds
+  });
+});
+
+app.get('/files/:fileId/stream', async (c) => {
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const token = c.req.query('token');
+
+  if (!token) {
+    throw new HttpError(401, 'Missing stream token');
+  }
+
+  const { files } = await collections();
+  const activeFile = await files.findOne({
+    id: fileId,
+    status: 'active',
+    deletedAt: null
+  });
+  const file = assertFound(activeFile, 'File not found');
+
+  if (!file.mimeType.startsWith('video/')) {
+    throw new HttpError(415, 'Streaming is only available for videos');
+  }
+
+  verifyStreamToken(fileId, file.ownerId, token);
+
+  const range = c.req.header('range');
+  const object = await getObjectRange(file.r2Key, range);
+
+  if (!object.Body) {
+    throw new HttpError(404, 'Video not found');
+  }
+
+  const bytes = await object.Body.transformToByteArray();
+  const headers = new Headers({
+    'content-type': file.mimeType,
+    'accept-ranges': 'bytes',
+    'cache-control': 'private, max-age=300'
+  });
+
+  if (object.ContentRange) {
+    headers.set('content-range', object.ContentRange);
+  }
+
+  if (object.ContentLength !== undefined) {
+    headers.set('content-length', String(object.ContentLength));
+  }
+
+  return new Response(Buffer.from(bytes), {
+    status: range ? 206 : 200,
+    headers
   });
 });
 

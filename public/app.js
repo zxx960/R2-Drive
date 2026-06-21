@@ -23,7 +23,11 @@ const els = {
   previewDialog: document.querySelector('#previewDialog'),
   previewTitle: document.querySelector('#previewTitle'),
   previewImage: document.querySelector('#previewImage'),
-  previewCloseButton: document.querySelector('#previewCloseButton')
+  previewCloseButton: document.querySelector('#previewCloseButton'),
+  videoDialog: document.querySelector('#videoDialog'),
+  videoTitle: document.querySelector('#videoTitle'),
+  videoPlayer: document.querySelector('#videoPlayer'),
+  videoCloseButton: document.querySelector('#videoCloseButton')
 };
 
 function headers(extra = {}) {
@@ -146,7 +150,9 @@ function renderItems(payload) {
   }
 
   for (const file of files) {
-    const fileActions = file.mimeType?.startsWith('image/')
+    const isImage = file.mimeType?.startsWith('image/');
+    const isVideo = file.mimeType?.startsWith('video/');
+    const fileActions = isImage || isVideo
       ? [
           ['下载', () => downloadFile(file.id)],
           ['分享', () => shareFile(file.id)],
@@ -163,7 +169,7 @@ function renderItems(payload) {
       name: file.name,
       file,
       meta: `${formatBytes(file.size)} · ${file.mimeType || 'unknown'}`,
-      onOpen: file.mimeType?.startsWith('image/') ? () => previewImage(file) : undefined,
+      onOpen: isImage ? () => previewImage(file) : isVideo ? () => playVideo(file) : undefined,
       actions: fileActions
     });
     els.items.append(item);
@@ -252,6 +258,8 @@ async function loadThumbnail(row, file) {
     image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
     if (file.mimeType.startsWith('image/')) {
       image.addEventListener('click', () => previewImage(file));
+    } else if (file.mimeType.startsWith('video/')) {
+      image.addEventListener('click', () => playVideo(file));
     }
 
     icon.replaceWith(image);
@@ -288,6 +296,34 @@ function clearPreviewImage() {
   }
   els.previewImage.removeAttribute('src');
   els.previewImage.removeAttribute('data-object-url');
+}
+
+async function playVideo(file) {
+  try {
+    closeVideo();
+    const payload = await api(`/files/${file.id}/stream-token`, {
+      method: 'GET',
+      headers: { 'content-type': undefined }
+    });
+    els.videoTitle.textContent = file.name;
+    els.videoPlayer.src = payload.url;
+    els.videoDialog.showModal();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+function closeVideo() {
+  clearVideo();
+  if (els.videoDialog.open) {
+    els.videoDialog.close();
+  }
+}
+
+function clearVideo() {
+  els.videoPlayer.pause();
+  els.videoPlayer.removeAttribute('src');
+  els.videoPlayer.load();
 }
 
 async function loadItems() {
@@ -405,6 +441,8 @@ els.trashButton.addEventListener('click', () => {
 els.logoutButton.addEventListener('click', logout);
 els.previewCloseButton.addEventListener('click', closePreview);
 els.previewDialog.addEventListener('close', clearPreviewImage);
+els.videoCloseButton.addEventListener('click', closeVideo);
+els.videoDialog.addEventListener('close', clearVideo);
 els.folderForm.addEventListener('submit', createFolder);
 els.fileInput.addEventListener('change', () => uploadFiles(Array.from(els.fileInput.files || [])));
 
