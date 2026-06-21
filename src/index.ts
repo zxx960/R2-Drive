@@ -11,6 +11,7 @@ import { env } from './config.js';
 import { collections, publicFile, publicFolder } from './db.js';
 import { assertFound, HttpError } from './errors.js';
 import { createDownloadUrl, createUploadUrl, deleteObject, getObject, headObject, uploadObject } from './r2.js';
+import { createVideoThumbnailBytes } from './thumbnails.js';
 
 const app = new Hono<{ Variables: AppVariables }>();
 
@@ -364,6 +365,17 @@ app.post('/uploads/server', requireUser, async (c) => {
   const bytes = new Uint8Array(await uploaded.arrayBuffer());
   const mimeType = uploaded.type || 'application/octet-stream';
   const object = await uploadObject(key, mimeType, bytes);
+  let thumbnailKey: string | null = null;
+
+  if (mimeType.startsWith('video/')) {
+    try {
+      const thumbnailBytes = await createVideoThumbnailBytes(bytes, mimeType);
+      thumbnailKey = `users/${userId}/thumbnails/${id}.jpg`;
+      await uploadObject(thumbnailKey, 'image/jpeg', thumbnailBytes);
+    } catch (error) {
+      console.warn('Failed to create video thumbnail', error);
+    }
+  }
 
   const file = {
     id,
@@ -374,6 +386,7 @@ app.post('/uploads/server', requireUser, async (c) => {
     size: uploaded.size,
     mimeType,
     etag: object.ETag ?? null,
+    thumbnailKey,
     status: 'active' as const,
     createdAt: now,
     uploadedAt: now,
@@ -468,6 +481,39 @@ app.get('/files/:fileId/preview', requireUser, async (c) => {
     headers: {
       'content-type': file.mimeType,
       'cache-control': 'private, max-age=300'
+    }
+  });
+});
+
+app.get('/files/:fileId/thumbnail', requireUser, async (c) => {
+  const userId = c.get('userId');
+  const fileId = uuidParam.parse(c.req.param('fileId'));
+  const { files } = await collections();
+
+  const activeFile = await files.findOne({
+    id: fileId,
+    ownerId: userId,
+    status: 'active',
+    deletedAt: null
+  });
+  const file = assertFound(activeFile, 'File not found');
+
+  if (!file.thumbnailKey) {
+    throw new HttpError(404, 'Thumbnail not found');
+  }
+
+  const object = await getObject(file.thumbnailKey);
+
+  if (!object.Body) {
+    throw new HttpError(404, 'Thumbnail not found');
+  }
+
+  const bytes = await object.Body.transformToByteArray();
+
+  return new Response(Buffer.from(bytes), {
+    headers: {
+      'content-type': 'image/jpeg',
+      'cache-control': 'private, max-age=86400'
     }
   });
 });
@@ -569,6 +615,9 @@ app.delete('/files/:fileId/permanent', requireUser, async (c) => {
   const trashedFile = assertFound(file, 'File not found');
 
   await deleteObject(trashedFile.r2Key);
+  if (trashedFile.thumbnailKey) {
+    await deleteObject(trashedFile.thumbnailKey);
+  }
   await shares.deleteMany({ fileId });
   await files.deleteOne({ id: fileId, ownerId: userId });
 

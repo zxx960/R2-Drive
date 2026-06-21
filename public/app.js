@@ -215,8 +215,8 @@ function createItem({ type, name, meta, onOpen, actions = [] }) {
   return row;
 }
 
-async function fetchImageBlobUrl(file) {
-  const response = await fetch(`/files/${file.id}/preview`, {
+async function fetchProtectedBlobUrl(path) {
+  const response = await fetch(path, {
     headers: {
       authorization: `Bearer ${state.token}`
     }
@@ -229,20 +229,31 @@ async function fetchImageBlobUrl(file) {
   return URL.createObjectURL(await response.blob());
 }
 
+async function fetchPreviewBlobUrl(file) {
+  return fetchProtectedBlobUrl(`/files/${file.id}/preview`);
+}
+
+async function fetchThumbnailBlobUrl(file) {
+  return fetchProtectedBlobUrl(`/files/${file.id}/thumbnail`);
+}
+
 async function loadThumbnail(row, file) {
-  if (!file.mimeType?.startsWith('image/')) return;
+  if (!file.mimeType?.startsWith('image/') && !(file.mimeType?.startsWith('video/') && file.hasThumbnail)) return;
 
   const icon = row.querySelector('.item-icon');
   if (!icon) return;
 
   try {
-    const url = await fetchImageBlobUrl(file);
+    const url = file.mimeType.startsWith('video/') ? await fetchThumbnailBlobUrl(file) : await fetchPreviewBlobUrl(file);
     const image = document.createElement('img');
     image.className = 'item-thumb';
     image.alt = file.name;
     image.src = url;
     image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
-    image.addEventListener('click', () => previewImage(file));
+    if (file.mimeType.startsWith('image/')) {
+      image.addEventListener('click', () => previewImage(file));
+    }
+
     icon.replaceWith(image);
   } catch {
     // Keep the generic file icon if preview loading fails.
@@ -252,7 +263,7 @@ async function loadThumbnail(row, file) {
 async function previewImage(file) {
   try {
     closePreview();
-    const url = await fetchImageBlobUrl(file);
+    const url = await fetchPreviewBlobUrl(file);
     els.previewTitle.textContent = file.name;
     els.previewImage.alt = file.name;
     els.previewImage.src = url;

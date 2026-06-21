@@ -20,6 +20,7 @@ export type FileDoc = {
   size: number;
   mimeType: string;
   etag: string | null;
+  thumbnailKey?: string | null;
   status: 'pending' | 'active' | 'trashed';
   createdAt: Date;
   uploadedAt: Date | null;
@@ -80,6 +81,7 @@ export function publicFile(file: FileDoc) {
     name: file.name,
     size: file.size,
     mimeType: file.mimeType,
+    hasThumbnail: Boolean(file.thumbnailKey),
     status: file.status,
     createdAt: file.createdAt,
     uploadedAt: file.uploadedAt,
