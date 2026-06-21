@@ -19,7 +19,11 @@ const els = {
   breadcrumbs: document.querySelector('#breadcrumbs'),
   summary: document.querySelector('#summary'),
   notice: document.querySelector('#notice'),
-  items: document.querySelector('#items')
+  items: document.querySelector('#items'),
+  previewDialog: document.querySelector('#previewDialog'),
+  previewTitle: document.querySelector('#previewTitle'),
+  previewImage: document.querySelector('#previewImage'),
+  previewCloseButton: document.querySelector('#previewCloseButton')
 };
 
 function headers(extra = {}) {
@@ -142,16 +146,25 @@ function renderItems(payload) {
   }
 
   for (const file of files) {
+    const fileActions = file.mimeType?.startsWith('image/')
+      ? [
+          ['下载', () => downloadFile(file.id)],
+          ['分享', () => shareFile(file.id)],
+          ['删除', () => deleteFile(file.id)]
+        ]
+      : [
+          ['下载', () => downloadFile(file.id)],
+          ['分享', () => shareFile(file.id)],
+          ['删除', () => deleteFile(file.id)]
+        ];
+
     const item = createItem({
       type: 'file',
       name: file.name,
       file,
       meta: `${formatBytes(file.size)} · ${file.mimeType || 'unknown'}`,
-      actions: [
-        ['下载', () => downloadFile(file.id)],
-        ['分享', () => shareFile(file.id)],
-        ['删除', () => deleteFile(file.id)]
-      ]
+      onOpen: file.mimeType?.startsWith('image/') ? () => previewImage(file) : undefined,
+      actions: fileActions
     });
     els.items.append(item);
     loadThumbnail(item, file);
@@ -172,6 +185,16 @@ function createItem({ type, name, meta, onOpen, actions = [] }) {
   if (type === 'folder') {
     title.type = 'button';
     title.addEventListener('click', onOpen);
+  } else if (onOpen) {
+    title.tabIndex = 0;
+    title.role = 'button';
+    title.addEventListener('click', onOpen);
+    title.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        onOpen();
+      }
+    });
   }
 
   const detail = document.createElement('div');
@@ -192,6 +215,20 @@ function createItem({ type, name, meta, onOpen, actions = [] }) {
   return row;
 }
 
+async function fetchImageBlobUrl(file) {
+  const response = await fetch(`/files/${file.id}/preview`, {
+    headers: {
+      authorization: `Bearer ${state.token}`
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`预览失败：HTTP ${response.status}`);
+  }
+
+  return URL.createObjectURL(await response.blob());
+}
+
 async function loadThumbnail(row, file) {
   if (!file.mimeType?.startsWith('image/')) return;
 
@@ -199,25 +236,47 @@ async function loadThumbnail(row, file) {
   if (!icon) return;
 
   try {
-    const response = await fetch(`/files/${file.id}/preview`, {
-      headers: {
-        authorization: `Bearer ${state.token}`
-      }
-    });
-
-    if (!response.ok) return;
-
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
+    const url = await fetchImageBlobUrl(file);
     const image = document.createElement('img');
     image.className = 'item-thumb';
     image.alt = file.name;
     image.src = url;
     image.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+    image.addEventListener('click', () => previewImage(file));
     icon.replaceWith(image);
   } catch {
     // Keep the generic file icon if preview loading fails.
   }
+}
+
+async function previewImage(file) {
+  try {
+    closePreview();
+    const url = await fetchImageBlobUrl(file);
+    els.previewTitle.textContent = file.name;
+    els.previewImage.alt = file.name;
+    els.previewImage.src = url;
+    els.previewImage.dataset.objectUrl = url;
+    els.previewDialog.showModal();
+  } catch (error) {
+    showNotice(error.message, true);
+  }
+}
+
+function closePreview() {
+  clearPreviewImage();
+  if (els.previewDialog.open) {
+    els.previewDialog.close();
+  }
+}
+
+function clearPreviewImage() {
+  const url = els.previewImage.dataset.objectUrl;
+  if (url) {
+    URL.revokeObjectURL(url);
+  }
+  els.previewImage.removeAttribute('src');
+  els.previewImage.removeAttribute('data-object-url');
 }
 
 async function loadItems() {
@@ -333,6 +392,8 @@ els.trashButton.addEventListener('click', () => {
   window.location.href = '/trash';
 });
 els.logoutButton.addEventListener('click', logout);
+els.previewCloseButton.addEventListener('click', closePreview);
+els.previewDialog.addEventListener('close', clearPreviewImage);
 els.folderForm.addEventListener('submit', createFolder);
 els.fileInput.addEventListener('change', () => uploadFiles(Array.from(els.fileInput.files || [])));
 
