@@ -12,8 +12,6 @@ if (!state.token) {
 }
 
 const els = {
-  refreshButton: document.querySelector('#refreshButton'),
-  rootButton: document.querySelector('#rootButton'),
   trashButton: document.querySelector('#trashButton'),
   logoutButton: document.querySelector('#logoutButton'),
   fileInput: document.querySelector('#fileInput'),
@@ -385,13 +383,6 @@ async function permanentDeleteFolder(folderId, folderName) {
   }
 }
 
-els.refreshButton.addEventListener('click', loadItems);
-els.rootButton.addEventListener('click', () => {
-  state.view = 'files';
-  state.currentFolderId = null;
-  state.path = [{ id: null, name: '根目录' }];
-  loadItems();
-});
 els.trashButton.addEventListener('click', () => {
   state.view = 'trash';
   state.currentFolderId = null;
