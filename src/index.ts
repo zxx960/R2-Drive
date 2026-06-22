@@ -738,10 +738,7 @@ app.get('/shares/:token', async (c) => {
   });
   const file = assertFound(activeFile, 'Share not found or expired');
 
-  return c.json({
-    url: await createDownloadUrl(file.r2Key, file.name),
-    expiresIn: env.PRESIGNED_DOWNLOAD_TTL_SECONDS
-  });
+  return c.redirect(await createDownloadUrl(file.r2Key, file.name));
 });
 
 serve(

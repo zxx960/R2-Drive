@@ -177,7 +177,7 @@ curl -X POST http://localhost:3000/files/{fileId}/share \
   -d "{\"expiresInSeconds\":86400}"
 ```
 
-解析分享 token：
+打开分享链接：
 
 ```bash
 curl http://localhost:3000/shares/{token}

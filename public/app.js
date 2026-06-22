@@ -531,7 +531,7 @@ async function shareFile(fileId) {
     });
     const url = `${window.location.origin}/shares/${payload.share.token}`;
     await navigator.clipboard.writeText(url);
-    showNotice('分享链接已复制，有效期 24 小时');
+    showNotice('文件链接已复制，有效期 24 小时');
   } catch (error) {
     showNotice(error.message, true);
   }
