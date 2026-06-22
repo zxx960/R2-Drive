@@ -14,6 +14,10 @@ const els = {
   trashButton: document.querySelector('#trashButton'),
   logoutButton: document.querySelector('#logoutButton'),
   fileInput: document.querySelector('#fileInput'),
+  uploadProgress: document.querySelector('#uploadProgress'),
+  uploadProgressName: document.querySelector('#uploadProgressName'),
+  uploadProgressPercent: document.querySelector('#uploadProgressPercent'),
+  uploadProgressBar: document.querySelector('#uploadProgressBar'),
   folderForm: document.querySelector('#folderForm'),
   folderNameInput: document.querySelector('#folderNameInput'),
   breadcrumbs: document.querySelector('#breadcrumbs'),
@@ -81,6 +85,21 @@ function showNotice(message, isError = false) {
   showNotice.timer = window.setTimeout(() => {
     els.notice.hidden = true;
   }, 4200);
+}
+
+function setUploadProgress(name, percent, label) {
+  const safePercent = Math.max(0, Math.min(100, Math.round(percent)));
+  els.uploadProgress.hidden = false;
+  els.uploadProgressName.textContent = name;
+  els.uploadProgressPercent.textContent = label || `${safePercent}%`;
+  els.uploadProgressBar.style.width = `${safePercent}%`;
+}
+
+function hideUploadProgress() {
+  els.uploadProgress.hidden = true;
+  els.uploadProgressName.textContent = '';
+  els.uploadProgressPercent.textContent = '0%';
+  els.uploadProgressBar.style.width = '0%';
 }
 
 function formatBytes(bytes) {
@@ -410,22 +429,43 @@ async function createVideoThumbnailBlob(file) {
   }
 }
 
-async function uploadToSignedUrl(upload, body) {
-  const response = await fetch(upload.url, {
-    method: upload.method,
-    headers: upload.headers || {},
-    body
-  });
+function uploadToSignedUrl(upload, body, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(upload.method, upload.url);
 
-  if (!response.ok) {
-    throw new Error(`上传到 R2 失败：HTTP ${response.status}`);
-  }
+    for (const [key, value] of Object.entries(upload.headers || {})) {
+      xhr.setRequestHeader(key, value);
+    }
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress((event.loaded / event.total) * 100);
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        onProgress?.(100);
+        resolve();
+      } else {
+        reject(new Error(`上传到 R2 失败：HTTP ${xhr.status}`));
+      }
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('上传到 R2 失败：网络错误')));
+    xhr.addEventListener('abort', () => reject(new Error('上传已取消')));
+    xhr.send(body);
+  });
 }
 
 async function uploadFiles(files) {
-  for (const file of files) {
+  els.fileInput.disabled = true;
+
+  for (const [index, file] of files.entries()) {
     try {
       showNotice(`正在上传 ${file.name}`);
+      setUploadProgress(`${index + 1}/${files.length} ${file.name}`, 0);
       const mimeType = file.type || 'application/octet-stream';
       const initPayload = await api('/uploads/init', {
         method: 'POST',
@@ -437,11 +477,16 @@ async function uploadFiles(files) {
         })
       });
 
-      await uploadToSignedUrl(initPayload.upload, file);
+      await uploadToSignedUrl(initPayload.upload, file, (percent) => {
+        const label = percent >= 100 ? '正在确认' : undefined;
+        setUploadProgress(`${index + 1}/${files.length} ${file.name}`, percent, label);
+      });
+      setUploadProgress(`${index + 1}/${files.length} ${file.name}`, 100, '正在确认');
 
       let thumbnailUploaded = false;
       if (initPayload.thumbnailUpload) {
         try {
+          setUploadProgress(`正在处理缩略图：${file.name}`, 100, '处理中');
           const thumbnail = await createVideoThumbnailBlob(file);
           if (thumbnail) {
             await uploadToSignedUrl(initPayload.thumbnailUpload, thumbnail);
@@ -463,7 +508,9 @@ async function uploadFiles(files) {
     }
   }
 
+  els.fileInput.disabled = false;
   els.fileInput.value = '';
+  hideUploadProgress();
   await loadItems();
 }
 

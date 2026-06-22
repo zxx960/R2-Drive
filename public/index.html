@@ -23,8 +23,20 @@
         </div>
 
         <div class="upload-zone">
-          <input id="fileInput" type="file" multiple />
-          <p>选择文件后会上传到服务端，再保存到 R2。</p>
+          <label class="file-picker">
+            <input id="fileInput" type="file" multiple />
+            <span>选择文件</span>
+          </label>
+          <p>选择文件后会直接上传到 R2。</p>
+          <div id="uploadProgress" class="upload-progress" hidden>
+            <div class="upload-progress-text">
+              <span id="uploadProgressName"></span>
+              <span id="uploadProgressPercent">0%</span>
+            </div>
+            <div class="upload-progress-track">
+              <div id="uploadProgressBar" class="upload-progress-bar"></div>
+            </div>
+          </div>
         </div>
       </aside>
 
